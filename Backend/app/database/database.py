@@ -32,6 +32,7 @@ SKILL_SEED = [
     "AWS",
     "Git",
     "GitHub",
+    'Kubernetes',
 ]
 
 
@@ -60,6 +61,7 @@ def initialize_database() -> None:
             """
             CREATE TABLE IF NOT EXISTS resumes (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
                 original_filename TEXT NOT NULL,
                 stored_filename TEXT NOT NULL,
                 file_path TEXT NOT NULL,
@@ -69,6 +71,7 @@ def initialize_database() -> None:
             )
             """
         )
+        _ensure_column(connection, "resumes", "user_id", "user_id INTEGER")
         _ensure_column(connection, "resumes", "education_json", "education_json TEXT NOT NULL DEFAULT '[]'")
         _ensure_column(connection, "resumes", "experience_json", "experience_json TEXT NOT NULL DEFAULT '[]'")
         connection.execute(
@@ -76,6 +79,7 @@ def initialize_database() -> None:
             CREATE TABLE IF NOT EXISTS job_descriptions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 resume_id INTEGER NOT NULL,
+                user_id INTEGER,
                 job_title TEXT NOT NULL DEFAULT '',
                 company TEXT NOT NULL DEFAULT '',
                 description_text TEXT NOT NULL,
@@ -84,12 +88,14 @@ def initialize_database() -> None:
             )
             """
         )
+        _ensure_column(connection, "job_descriptions", "user_id", "user_id INTEGER")
         connection.execute(
             """
             CREATE TABLE IF NOT EXISTS analyses (
                 id TEXT PRIMARY KEY,
                 resume_id INTEGER NOT NULL,
                 jd_id INTEGER NOT NULL,
+                user_id INTEGER,
                 result_json TEXT NOT NULL,
                 created_at TEXT NOT NULL,
                 FOREIGN KEY (resume_id) REFERENCES resumes (id),
@@ -97,6 +103,7 @@ def initialize_database() -> None:
             )
             """
         )
+        _ensure_column(connection, "analyses", "user_id", "user_id INTEGER")
         connection.execute(
             """
             CREATE TABLE IF NOT EXISTS users (

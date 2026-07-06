@@ -50,8 +50,8 @@ class ATSScoreService:
         self.skill_repository = SkillRepository()
         self.skill_service = SkillService()
 
-    def score_resume(self, request: ATSScoreRequest) -> ATSScoreResponse:
-        resume_record = self._resolve_resume_record(request.resume_id)
+    def score_resume(self, request: ATSScoreRequest, user_id: int) -> ATSScoreResponse:
+        resume_record = self._resolve_resume_record(user_id, request.resume_id)
         resume_text = self._resolve_resume_text(resume_record)
         sections = self._extract_sections(resume_text)
 
@@ -79,13 +79,13 @@ class ATSScoreService:
             suggestions=self._build_suggestions(section_scores, missing_sections),
         )
 
-    def _resolve_resume_record(self, resume_id: int | None) -> dict[str, object]:
-        file_record = self.resume_repository.get_resume_file_record(resume_id)
+    def _resolve_resume_record(self, user_id: int, resume_id: int | None) -> dict[str, object]:
+        file_record = self.resume_repository.get_resume_file_record(user_id, resume_id)
         if file_record is None:
             detail = "Resume not found." if resume_id else "No uploaded resume found. Upload a resume first."
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=detail)
 
-        payload = self.resume_repository.get_resume_payload(resume_id)
+        payload = self.resume_repository.get_resume_payload(user_id, resume_id)
         if payload is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resume analysis not found.")
 

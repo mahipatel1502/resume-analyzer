@@ -44,26 +44,31 @@ export default function RadialGauge({
   const tone = toneOverride || getToneForScore(score);
   const color = toneColors[tone];
 
-  const radius = size / 2 - 14;
+  const isCompact = size <= 96;
+  const strokeWidth = isCompact ? 7 : 9;
+  const radius = size / 2 - strokeWidth - 5;
   const circumference = 2 * Math.PI * radius;
   const sweep = (animatedScore / 100) * circumference * 0.999;
+  const tickCount = isCompact ? 32 : 40;
+  const tickLengthMajor = isCompact ? 10 : 12;
+  const tickLengthMinor = isCompact ? 7 : 9;
 
   return (
     <div className="flex flex-col items-center" style={{ width: size }}>
       <div className="relative" style={{ width: size, height: size }}>
-        <svg width={size} height={size} className="-rotate-90">
-          {Array.from({ length: 40 }).map((_, i) => {
-            const angle = (i / 40) * 360;
-            const isMajor = i % 5 === 0;
+        <svg width={size} height={size} className="-rotate-90 overflow-visible">
+          {Array.from({ length: tickCount }).map((_, i) => {
+            const angle = (i / tickCount) * 360;
+            const isMajor = i % 4 === 0;
             return (
               <line
                 key={i}
                 x1={size / 2}
                 y1={6}
                 x2={size / 2}
-                y2={isMajor ? 12 : 9}
+                y2={isMajor ? tickLengthMajor : tickLengthMinor}
                 stroke="var(--gauge-tick)"
-                strokeWidth={isMajor ? 1.5 : 1}
+                strokeWidth={isMajor ? 1.4 : 0.9}
                 transform={`rotate(${angle} ${size / 2} ${size / 2})`}
               />
             );
@@ -74,7 +79,7 @@ export default function RadialGauge({
             r={radius}
             fill="none"
             stroke="var(--gauge-track)"
-            strokeWidth={9}
+            strokeWidth={strokeWidth}
           />
           <circle
             cx={size / 2}
@@ -82,7 +87,7 @@ export default function RadialGauge({
             r={radius}
             fill="none"
             stroke={color}
-            strokeWidth={9}
+            strokeWidth={strokeWidth}
             strokeLinecap="round"
             strokeDasharray={`${sweep} ${circumference}`}
             style={{
@@ -91,11 +96,16 @@ export default function RadialGauge({
             }}
           />
         </svg>
-        <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className="font-mono text-3xl font-bold tabular-nums" style={{ color }}>
+        <div className="absolute inset-0 flex flex-col items-center justify-center leading-none">
+          <span
+            className={`font-mono font-bold tabular-nums ${isCompact ? "text-2xl" : "text-3xl"}`}
+            style={{ color }}
+          >
             {Math.round(animatedScore)}
           </span>
-          <span className="font-mono text-[10px] uppercase tracking-wider text-ink-400">/ 100</span>
+          <span className={`font-mono uppercase tracking-wider text-ink-400 ${isCompact ? "text-[9px] mt-0.5" : "text-[10px]"}`}>
+            / 100
+          </span>
         </div>
       </div>
       {label && (

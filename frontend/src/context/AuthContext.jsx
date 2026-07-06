@@ -49,6 +49,10 @@ export function AuthProvider({ children }) {
   const persistAuth = useCallback((authData) => {
     setToken(authData.access_token);
     setUser(authData.user);
+    if (typeof window !== "undefined") {
+      localStorage.setItem(TOKEN_KEY, authData.access_token);
+      localStorage.setItem(USER_KEY, JSON.stringify(authData.user));
+    }
   }, []);
 
   const login = useCallback(async (credentials) => {
@@ -66,6 +70,10 @@ export function AuthProvider({ children }) {
   const logout = useCallback(() => {
     setToken(null);
     setUser(null);
+    if (typeof window !== "undefined") {
+      localStorage.removeItem(TOKEN_KEY);
+      localStorage.removeItem(USER_KEY);
+    }
   }, []);
 
   const value = useMemo(

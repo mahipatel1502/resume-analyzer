@@ -1,4 +1,4 @@
-from fastapi import Depends, FastAPI
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.controllers.ats_controller import router as ats_router
@@ -7,7 +7,6 @@ from app.controllers.frontend_controller import router as frontend_router
 from app.controllers.job_controller import router as job_router
 from app.controllers.resume_controller import router as resume_router
 from app.database.database import initialize_database
-from app.dependencies.auth import get_current_user
 
 
 app = FastAPI(
@@ -35,7 +34,7 @@ def startup_event() -> None:
     initialize_database()
 
 
-@app.get("/", tags=["Health"], dependencies=[Depends(get_current_user)])
+@app.get("/", tags=["Health"])
 def root() -> dict[str, str]:
     return {"message": "Resume Analyzer API is running."}
 

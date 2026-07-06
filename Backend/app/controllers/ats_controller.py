@@ -10,5 +10,5 @@ ats_score_service = ATSScoreService()
 
 
 @router.post("/ats-score", response_model=ATSScoreResponse)
-def score_resume(request: ATSScoreRequest) -> ATSScoreResponse:
-    return ats_score_service.score_resume(request)
+def score_resume(request: ATSScoreRequest, current_user: dict[str, object] = Depends(get_current_user)) -> ATSScoreResponse:
+    return ats_score_service.score_resume(request, int(current_user["id"]))

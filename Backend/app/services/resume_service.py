@@ -18,7 +18,7 @@ class ResumeService:
         self.text_service = TextService()
         self.analysis_service = ResumeAnalysisService()
 
-    async def upload_resume(self, file: UploadFile) -> ResumeUploadResponse:
+    async def upload_resume(self, file: UploadFile, user_id: int) -> ResumeUploadResponse:
         self._validate_upload(file)
         original_filename = file.filename or "resume.pdf"
         stored_filename = f"{uuid4().hex}.pdf"
@@ -46,6 +46,7 @@ class ResumeService:
         cleaned_text = self.text_service.clean_text(extracted_text)
         analysis = self.analysis_service.analyze(extracted_text)
         resume_id = self.resume_repository.save_resume(
+            user_id=user_id,
             original_filename=original_filename,
             stored_filename=stored_filename,
             file_path=str(file_path),
@@ -67,37 +68,37 @@ class ResumeService:
             ),
         )
 
-    def get_resume_skills(self, resume_id: int | None = None) -> ResumeSkillsResponse:
-        resume_rows = self.resume_repository.list_resumes(resume_id)
+    def get_resume_skills(self, user_id: int, resume_id: int | None = None) -> ResumeSkillsResponse:
+        resume_rows = self.resume_repository.list_resumes(user_id, resume_id)
         records = [ResumeRecord(**row) for row in resume_rows]
         return ResumeSkillsResponse(resumes=records)
 
-    def get_education(self, resume_id: int | None = None) -> EducationResponse:
-        resume_payload = self._get_resume_payload(resume_id)
+    def get_education(self, user_id: int, resume_id: int | None = None) -> EducationResponse:
+        resume_payload = self._get_resume_payload(user_id, resume_id)
         return EducationResponse(
             resume_id=resume_payload["resume_id"],
             filename=resume_payload["filename"],
             education=resume_payload["education"],
         )
 
-    def get_experience(self, resume_id: int | None = None) -> ExperienceResponse:
-        resume_payload = self._get_resume_payload(resume_id)
+    def get_experience(self, user_id: int, resume_id: int | None = None) -> ExperienceResponse:
+        resume_payload = self._get_resume_payload(user_id, resume_id)
         return ExperienceResponse(
             resume_id=resume_payload["resume_id"],
             filename=resume_payload["filename"],
             experience=resume_payload["experience"],
         )
 
-    def get_resume_analysis(self, resume_id: int | None = None) -> ResumeAnalysisResponse:
-        resume_payload = self._get_resume_payload(resume_id)
+    def get_resume_analysis(self, user_id: int, resume_id: int | None = None) -> ResumeAnalysisResponse:
+        resume_payload = self._get_resume_payload(user_id, resume_id)
         return ResumeAnalysisResponse(
             education=resume_payload["education"],
             experience=resume_payload["experience"],
             skills=resume_payload["extracted_skills"],
         )
 
-    def reanalyze_resume(self, resume_id: int | None = None) -> ResumeAnalysisResponse:
-        file_record = self.resume_repository.get_resume_file_record(resume_id)
+    def reanalyze_resume(self, user_id: int, resume_id: int | None = None) -> ResumeAnalysisResponse:
+        file_record = self.resume_repository.get_resume_file_record(user_id, resume_id)
         if file_record is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -114,6 +115,7 @@ class ResumeService:
         extracted_text = self.pdf_service.extract_text(resume_file_path)
         analysis = self.analysis_service.analyze(extracted_text)
         self.resume_repository.update_resume_analysis(
+            user_id=user_id,
             resume_id=int(file_record["resume_id"]),
             extracted_skills=analysis["skills"],
             education_entries=analysis["education"],
@@ -140,8 +142,8 @@ class ResumeService:
                 detail="Invalid file format. Upload a valid PDF document.",
             )
 
-    def _get_resume_payload(self, resume_id: int | None = None) -> dict[str, object]:
-        resume_payload = self.resume_repository.get_resume_payload(resume_id)
+    def _get_resume_payload(self, user_id: int, resume_id: int | None = None) -> dict[str, object]:
+        resume_payload = self.resume_repository.get_resume_payload(user_id, resume_id)
         if resume_payload is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,

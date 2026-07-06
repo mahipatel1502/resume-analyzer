@@ -16,7 +16,7 @@ from app.services.analysis_orchestration_service import AnalysisOrchestrationSer
 from app.services.resume_service import ResumeService
 
 
-router = APIRouter(tags=["Frontend API"], dependencies=[Depends(get_current_user)])
+router = APIRouter(tags=["Frontend API"])
 resume_service = ResumeService()
 analysis_service = AnalysisOrchestrationService()
 resume_repository = ResumeRepository()
@@ -28,8 +28,8 @@ def health_check() -> dict[str, str]:
 
 
 @router.post("/resume/upload", response_model=FrontendResumeUploadResponse)
-async def upload_resume_frontend(file: UploadFile = File(...)) -> FrontendResumeUploadResponse:
-    result = await resume_service.upload_resume(file)
+async def upload_resume_frontend(file: UploadFile = File(...), current_user: dict[str, object] = Depends(get_current_user)) -> FrontendResumeUploadResponse:
+    result = await resume_service.upload_resume(file, int(current_user["id"]))
     return FrontendResumeUploadResponse(
         resume_id=result.resume_id,
         filename=result.filename,
@@ -39,33 +39,33 @@ async def upload_resume_frontend(file: UploadFile = File(...)) -> FrontendResume
 
 
 @router.post("/resume/parse", response_model=ResumeParseResponse)
-def parse_resume_frontend(request: ResumeParseRequest) -> ResumeParseResponse:
-    return analysis_service.parse_resume(request)
+def parse_resume_frontend(request: ResumeParseRequest, current_user: dict[str, object] = Depends(get_current_user)) -> ResumeParseResponse:
+    return analysis_service.parse_resume(request, int(current_user["id"]))
 
 
 @router.post("/job-description/submit", response_model=JobDescriptionSubmitResponse)
-def submit_job_description(request: JobDescriptionSubmitRequest) -> JobDescriptionSubmitResponse:
-    return analysis_service.submit_job_description(request)
+def submit_job_description(request: JobDescriptionSubmitRequest, current_user: dict[str, object] = Depends(get_current_user)) -> JobDescriptionSubmitResponse:
+    return analysis_service.submit_job_description(request, int(current_user["id"]))
 
 
 @router.post("/analyze", response_model=AnalysisResult)
-def analyze_resume(request: AnalyzeRequest) -> AnalysisResult:
-    return analysis_service.run_analysis(request)
+def analyze_resume(request: AnalyzeRequest, current_user: dict[str, object] = Depends(get_current_user)) -> AnalysisResult:
+    return analysis_service.run_analysis(request, int(current_user["id"]))
 
 
 @router.get("/analyze/{analysis_id}", response_model=AnalysisResult)
-def get_analysis(analysis_id: str) -> AnalysisResult:
-    return analysis_service.get_analysis(analysis_id)
+def get_analysis(analysis_id: str, current_user: dict[str, object] = Depends(get_current_user)) -> AnalysisResult:
+    return analysis_service.get_analysis(analysis_id, int(current_user["id"]))
 
 
 @router.get("/resume/history", response_model=AnalysisHistoryResponse)
-def get_analysis_history() -> AnalysisHistoryResponse:
-    return analysis_service.get_history()
+def get_analysis_history(current_user: dict[str, object] = Depends(get_current_user)) -> AnalysisHistoryResponse:
+    return analysis_service.get_history(int(current_user["id"]))
 
 
 @router.delete("/resume/{resume_id}")
-def delete_resume(resume_id: int) -> dict[str, str]:
-    deleted = resume_repository.delete_resume(resume_id)
+def delete_resume(resume_id: int, current_user: dict[str, object] = Depends(get_current_user)) -> dict[str, str]:
+    deleted = resume_repository.delete_resume(int(current_user["id"]), resume_id)
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resume not found.")
     return {"message": "Resume deleted successfully."}

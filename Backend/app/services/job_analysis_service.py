@@ -1,10 +1,12 @@
 import re
+from pathlib import Path
 
 from fastapi import HTTPException, status
 
 from app.models.job import JobAnalysisRequest, JobAnalysisResponse, MLMatchResponse, ResumeJobMatchResponse
 from app.repositories.resume_repository import ResumeRepository
 from app.repositories.skill_repository import SkillRepository
+from app.services.pdf_service import PDFService
 from app.services.ml_matching_service import MLMatchingService
 from app.services.skill_service import SkillService
 
@@ -55,15 +57,40 @@ class JobAnalysisService:
         ),
     )
 
+    REQUIREMENT_HINTS: tuple[str, ...] = (
+        "skills",
+        "skill set",
+        "skillset",
+        "technologies",
+        "technology",
+        "tools",
+        "stack",
+        "requirements",
+        "qualifications",
+        "must have",
+        "required",
+        "preferred",
+        "experience with",
+        "experience in",
+        "proficiency in",
+        "familiar with",
+        "knowledge of",
+        "work with",
+        "using",
+    )
+
+    SPLIT_PATTERN: re.Pattern[str] = re.compile(r"[,;|/•·]")
+
     def __init__(self) -> None:
         self.resume_repository = ResumeRepository()
         self.skill_repository = SkillRepository()
+        self.pdf_service = PDFService()
         self.skill_service = SkillService()
         self.ml_matching_service = MLMatchingService()
 
-    def analyze_job(self, request: JobAnalysisRequest) -> JobAnalysisResponse:
+    def analyze_job(self, request: JobAnalysisRequest, user_id: int) -> JobAnalysisResponse:
         cleaned_job_description = self._preprocess_job_description(request.job_description)
-        resume_skills = self._resolve_resume_skills(request)
+        resume_skills = self._resolve_resume_skills(request, user_id)
         available_skills = self._build_available_skills(cleaned_job_description, resume_skills)
         job_skills = self.skill_service.extract_skills(cleaned_job_description, available_skills)
         required_technologies = self._extract_required_technologies(cleaned_job_description, available_skills)
@@ -80,8 +107,8 @@ class JobAnalysisService:
             education_requirements=self._extract_matches(cleaned_job_description, self.EDUCATION_PATTERNS),
         )
 
-    def match_resume(self, request: JobAnalysisRequest) -> ResumeJobMatchResponse:
-        analysis = self.analyze_job(request)
+    def match_resume(self, request: JobAnalysisRequest, user_id: int) -> ResumeJobMatchResponse:
+        analysis = self.analyze_job(request, user_id)
         match_score = self._calculate_skill_match_score(analysis.job_skills, analysis.matched_skills)
 
         return ResumeJobMatchResponse(
@@ -91,9 +118,9 @@ class JobAnalysisService:
             recommendations=self._build_recommendations(analysis.missing_skills),
         )
 
-    def ml_match(self, request: JobAnalysisRequest) -> MLMatchResponse:
-        analysis = self.analyze_job(request)
-        resume_text = self._resolve_resume_text(request)
+    def ml_match(self, request: JobAnalysisRequest, user_id: int) -> MLMatchResponse:
+        analysis = self.analyze_job(request, user_id)
+        resume_text = self._resolve_resume_text_for_ml(request, user_id)
         ml_similarity = self.ml_matching_service.calculate_similarity(resume_text, request.job_description)
 
         return MLMatchResponse(
@@ -105,6 +132,7 @@ class JobAnalysisService:
         cleaned_text = re.sub(r"\r\n?", "\n", job_description)
         cleaned_text = re.sub(r"[•·]", "\n- ", cleaned_text)
         cleaned_text = re.sub(r"(?i)\b(job description|responsibilities|requirements|qualifications)\s*:", r"\n\1:\n", cleaned_text)
+        cleaned_text = re.sub(r"(?i)\b(must have|required skills|key skills|technical skills|preferred skills)\s*:", r"\n\1:\n", cleaned_text)
         cleaned_text = re.sub(r"[ \t]+", " ", cleaned_text)
         cleaned_text = re.sub(r"\n{3,}", "\n\n", cleaned_text)
         return cleaned_text.strip()
@@ -113,12 +141,13 @@ class JobAnalysisService:
         known_skills = self.skill_repository.list_skills()
         technology_names = list(self.TECHNOLOGY_PATTERNS.keys())
         section_candidates = self._extract_requirement_candidates(job_description)
+        text_candidates = self._extract_requirement_candidates_from_text(job_description)
         return self._deduplicate_preserving_order(
-            [*known_skills, *technology_names, *resume_skills, *section_candidates]
+            [*known_skills, *technology_names, *resume_skills, *section_candidates, *text_candidates]
         )
 
-    def _resolve_resume_skills(self, request: JobAnalysisRequest) -> list[str]:
-        resume_payload = self.resume_repository.get_resume_payload(request.resume_id)
+    def _resolve_resume_skills(self, request: JobAnalysisRequest, user_id: int) -> list[str]:
+        resume_payload = self.resume_repository.get_resume_payload(user_id, request.resume_id)
         if resume_payload is None:
             detail = "Resume not found." if request.resume_id else "No uploaded resume found. Upload a resume first."
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=detail)
@@ -131,8 +160,8 @@ class JobAnalysisService:
             )
         return self._deduplicate_preserving_order([str(skill) for skill in extracted_skills if str(skill).strip()])
 
-    def _resolve_resume_text(self, request: JobAnalysisRequest) -> str:
-        resume_payload = self.resume_repository.get_resume_payload(request.resume_id)
+    def _resolve_resume_text(self, request: JobAnalysisRequest, user_id: int) -> str:
+        resume_payload = self.resume_repository.get_resume_payload(user_id, request.resume_id)
         if resume_payload is None:
             detail = "Resume not found." if request.resume_id else "No uploaded resume found. Upload a resume first."
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=detail)
@@ -144,6 +173,20 @@ class JobAnalysisService:
                 detail="Stored resume text is empty. Re-upload or reanalyze the resume.",
             )
         return resume_text
+
+    def _resolve_resume_text_for_ml(self, request: JobAnalysisRequest, user_id: int) -> str:
+        file_record = self.resume_repository.get_resume_file_record(user_id, request.resume_id)
+        if file_record is not None:
+            file_path = Path(str(file_record["file_path"]))
+            if file_path.exists():
+                try:
+                    extracted_text = self.pdf_service.extract_text(file_path)
+                    if extracted_text.strip():
+                        return extracted_text
+                except Exception:
+                    pass
+
+        return self._resolve_resume_text(request, user_id)
 
     def _extract_required_technologies(self, text: str, available_skills: list[str]) -> list[str]:
         lowered_text = text.casefold()
@@ -166,18 +209,60 @@ class JobAnalysisService:
             if not normalized_line:
                 continue
 
-            if re.search(r"(?i)\b(skills?|technologies|tools|stack|requirements?|qualifications?)\b", normalized_line):
+            if self._looks_like_requirement_line(normalized_line):
                 candidates.extend(self._split_candidate_line(normalized_line))
-        return [candidate for candidate in candidates if self._is_candidate_skill(candidate)]
+        return self._canonicalize_candidates(candidates)
+
+    def _extract_requirement_candidates_from_text(self, text: str) -> list[str]:
+        candidates: list[str] = []
+        for raw_line in text.splitlines():
+            normalized_line = raw_line.strip(" -•\t")
+            if not normalized_line:
+                continue
+
+            if self._looks_like_requirement_line(normalized_line):
+                candidates.extend(self._split_candidate_line(normalized_line))
+                continue
+
+            if any(hint in normalized_line.casefold() for hint in self.REQUIREMENT_HINTS):
+                candidates.extend(self._split_candidate_line(normalized_line))
+
+        return self._canonicalize_candidates(candidates)
+
+    def _looks_like_requirement_line(self, line: str) -> bool:
+        return bool(re.search(r"(?i)\b(skills?|skill set|skillset|technologies|technology|tools|stack|requirements?|qualifications?|must have|required|preferred)\b", line))
 
     def _split_candidate_line(self, line: str) -> list[str]:
         if ":" in line:
             line = line.split(":", 1)[1]
-        return [part.strip(" .") for part in re.split(r"[,;|/]", line) if part.strip(" .")]
+        parts = [part.strip(" .") for part in self.SPLIT_PATTERN.split(line) if part.strip(" .")]
+        if len(parts) <= 1:
+            return parts
+
+        flattened: list[str] = []
+        for part in parts:
+            flattened.extend([piece.strip(" .") for piece in re.split(r"\band\b|\bor\b", part, flags=re.IGNORECASE) if piece.strip(" .")])
+        return flattened
+
+    def _canonicalize_candidates(self, candidates: list[str]) -> list[str]:
+        available_skills = self.skill_repository.list_skills()
+        canonical_candidates: list[str] = []
+        for candidate in candidates:
+            cleaned_candidate = re.sub(r"\s+", " ", candidate).strip()
+            if not self._is_candidate_skill(cleaned_candidate):
+                continue
+
+            canonical_candidate = self.skill_service._standardize_candidate(cleaned_candidate, available_skills)
+            if canonical_candidate:
+                canonical_candidates.append(canonical_candidate)
+
+        return self._deduplicate_preserving_order(canonical_candidates)
 
     def _is_candidate_skill(self, candidate: str) -> bool:
         normalized_candidate = candidate.casefold().strip()
         if not normalized_candidate or len(normalized_candidate) > 40:
+            return False
+        if re.fullmatch(r"(?:and|or|with|for|of|the|to|a|an)", normalized_candidate):
             return False
         return not any(
             phrase in normalized_candidate

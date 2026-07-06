@@ -27,12 +27,13 @@ class AnalysisOrchestrationService:
         self.ats_score_service = ATSScoreService()
         self.job_analysis_service = JobAnalysisService()
 
-    def submit_job_description(self, request: JobDescriptionSubmitRequest) -> JobDescriptionSubmitResponse:
-        resume_payload = self.resume_repository.get_resume_payload(request.resume_id)
+    def submit_job_description(self, request: JobDescriptionSubmitRequest, user_id: int) -> JobDescriptionSubmitResponse:
+        resume_payload = self.resume_repository.get_resume_payload(user_id, request.resume_id)
         if resume_payload is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resume not found.")
 
         jd_id = self.analysis_repository.save_job_description(
+            user_id=user_id,
             resume_id=request.resume_id,
             job_title=request.job_title.strip(),
             company=request.company.strip(),
@@ -40,12 +41,12 @@ class AnalysisOrchestrationService:
         )
         return JobDescriptionSubmitResponse(jd_id=jd_id)
 
-    def run_analysis(self, request: AnalyzeRequest) -> AnalysisResult:
-        resume_payload = self.resume_repository.get_resume_payload(request.resume_id)
+    def run_analysis(self, request: AnalyzeRequest, user_id: int) -> AnalysisResult:
+        resume_payload = self.resume_repository.get_resume_payload(user_id, request.resume_id)
         if resume_payload is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resume not found.")
 
-        job_description = self.analysis_repository.get_job_description(request.jd_id)
+        job_description = self.analysis_repository.get_job_description(user_id, request.jd_id)
         if job_description is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job description not found.")
 
@@ -59,10 +60,10 @@ class AnalysisOrchestrationService:
             job_description=str(job_description["description_text"]),
             resume_id=request.resume_id,
         )
-        ats_result = self.ats_score_service.score_resume(ATSScoreRequest(resume_id=request.resume_id))
-        match_result = self.job_analysis_service.match_resume(job_request)
-        ml_result = self.job_analysis_service.ml_match(job_request)
-        job_analysis = self.job_analysis_service.analyze_job(job_request)
+        ats_result = self.ats_score_service.score_resume(ATSScoreRequest(resume_id=request.resume_id), user_id)
+        match_result = self.job_analysis_service.match_resume(job_request, user_id)
+        ml_result = self.job_analysis_service.ml_match(job_request, user_id)
+        job_analysis = self.job_analysis_service.analyze_job(job_request, user_id)
 
         result = self._compose_analysis_result(
             analysis_id=uuid4().hex,
@@ -77,6 +78,7 @@ class AnalysisOrchestrationService:
             job_analysis=job_analysis,
         )
         self.analysis_repository.save_analysis(
+            user_id=user_id,
             analysis_id=result.analysis_id,
             resume_id=request.resume_id,
             jd_id=request.jd_id,
@@ -84,17 +86,17 @@ class AnalysisOrchestrationService:
         )
         return result
 
-    def get_analysis(self, analysis_id: str) -> AnalysisResult:
-        stored_result = self.analysis_repository.get_analysis(analysis_id)
+    def get_analysis(self, analysis_id: str, user_id: int) -> AnalysisResult:
+        stored_result = self.analysis_repository.get_analysis(user_id, analysis_id)
         if stored_result is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Analysis not found.")
         return AnalysisResult(**stored_result)
 
-    def get_history(self) -> AnalysisHistoryResponse:
-        return AnalysisHistoryResponse(items=self.analysis_repository.list_analyses())
+    def get_history(self, user_id: int) -> AnalysisHistoryResponse:
+        return AnalysisHistoryResponse(items=self.analysis_repository.list_analyses(user_id))
 
-    def parse_resume(self, request: ResumeParseRequest) -> ResumeParseResponse:
-        resume_payload = self.resume_repository.get_resume_payload(request.resume_id)
+    def parse_resume(self, request: ResumeParseRequest, user_id: int) -> ResumeParseResponse:
+        resume_payload = self.resume_repository.get_resume_payload(user_id, request.resume_id)
         if resume_payload is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resume not found.")
 

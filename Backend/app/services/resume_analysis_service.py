@@ -22,8 +22,8 @@ class ResumeAnalysisService:
     }
 
     UNIVERSITY_PATTERNS: tuple[str, ...] = (
-        r"\b(?:University|College|Institute|School|Academy|Polytechnic)\s+of\s+[A-Z][A-Za-z&.'-]*(?:\s+[A-Z][A-Za-z&.'-]*)*\b",
         r"\b[A-Z][A-Za-z&.'-]*(?:\s+[A-Z][A-Za-z&.'-]*)*\s+(?:University|College|Institute|School|Academy|Polytechnic)\b(?:\s+of\s+[A-Z][A-Za-z&.'-]*(?:\s+[A-Z][A-Za-z&.'-]*)*)?",
+        r"\b(?:University|College|Institute|School|Academy|Polytechnic)\s+of\s+[A-Z][A-Za-z&.'-]*(?:\s+[A-Z][A-Za-z&.'-]*)*\b",
         r"\b(?:IIT|NIT|IIIT|BITS)\s+[A-Z][A-Za-z&.'-]*\b",
     )
 
@@ -220,11 +220,17 @@ class ResumeAnalysisService:
             r"\1 ",
             normalized_chunk,
         )
+
+        candidates: list[str] = []
         for pattern in self.UNIVERSITY_PATTERNS:
-            match = re.search(pattern, normalized_chunk)
+            match = re.search(pattern, normalized_chunk, flags=re.IGNORECASE)
             if match:
-                return match.group(0).strip().rstrip(".,;")
-        return None
+                candidates.append(match.group(0).strip().rstrip(".,;"))
+
+        if not candidates:
+            return None
+
+        return max(candidates, key=len)
 
     def _extract_graduation_year(self, chunk: str) -> int | None:
         years = re.findall(r"\b(?:19|20)\d{2}\b", chunk)

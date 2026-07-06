@@ -8,6 +8,7 @@ from app.database.database import get_connection, serialize_skills, utc_now
 class ResumeRepository:
     def save_resume(
         self,
+        user_id: int,
         original_filename: str,
         stored_filename: str,
         file_path: str,
@@ -20,6 +21,7 @@ class ResumeRepository:
             cursor = connection.execute(
                 """
                 INSERT INTO resumes (
+                    user_id,
                     original_filename,
                     stored_filename,
                     file_path,
@@ -28,9 +30,10 @@ class ResumeRepository:
                     education_json,
                     experience_json,
                     created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
+                    user_id,
                     original_filename,
                     stored_filename,
                     file_path,
@@ -43,19 +46,20 @@ class ResumeRepository:
             )
             return int(cursor.lastrowid)
 
-    def list_resumes(self, resume_id: int | None = None) -> list[dict[str, object]]:
+    def list_resumes(self, user_id: int, resume_id: int | None = None) -> list[dict[str, object]]:
         query = (
             "SELECT id, original_filename, extracted_text, extracted_skills, education_json, experience_json, created_at "
             "FROM resumes"
         )
-        params: tuple[object, ...] = ()
+        params: list[object] = [user_id]
+        query += " WHERE user_id = ?"
         if resume_id is not None:
-            query += " WHERE id = ?"
-            params = (resume_id,)
+            query += " AND id = ?"
+            params.append(resume_id)
         query += " ORDER BY id DESC"
 
         with get_connection() as connection:
-            rows = connection.execute(query, params).fetchall()
+            rows = connection.execute(query, tuple(params)).fetchall()
 
         return [
             {
@@ -70,20 +74,20 @@ class ResumeRepository:
             for row in rows
         ]
 
-    def get_resume_payload(self, resume_id: int | None = None) -> dict[str, object] | None:
-        rows = self.list_resumes(resume_id)
+    def get_resume_payload(self, user_id: int, resume_id: int | None = None) -> dict[str, object] | None:
+        rows = self.list_resumes(user_id, resume_id)
         return rows[0] if rows else None
 
-    def get_resume_file_record(self, resume_id: int | None = None) -> dict[str, object] | None:
-        query = "SELECT id, original_filename, file_path FROM resumes"
-        params: tuple[object, ...] = ()
+    def get_resume_file_record(self, user_id: int, resume_id: int | None = None) -> dict[str, object] | None:
+        query = "SELECT id, original_filename, file_path FROM resumes WHERE user_id = ?"
+        params: list[object] = [user_id]
         if resume_id is not None:
-            query += " WHERE id = ?"
-            params = (resume_id,)
+            query += " AND id = ?"
+            params.append(resume_id)
         query += " ORDER BY id DESC LIMIT 1"
 
         with get_connection() as connection:
-            row = connection.execute(query, params).fetchone()
+            row = connection.execute(query, tuple(params)).fetchone()
 
         if row is None:
             return None
@@ -96,6 +100,7 @@ class ResumeRepository:
 
     def update_resume_analysis(
         self,
+        user_id: int,
         resume_id: int,
         extracted_skills: list[str],
         education_entries: list[dict[str, object]],
@@ -108,28 +113,29 @@ class ResumeRepository:
                 SET extracted_skills = ?,
                     education_json = ?,
                     experience_json = ?
-                WHERE id = ?
+                WHERE id = ? AND user_id = ?
                 """,
                 (
                     serialize_skills(extracted_skills),
                     json.dumps(education_entries),
                     json.dumps(experience_entries),
                     resume_id,
+                    user_id,
                 ),
             )
 
-    def delete_resume(self, resume_id: int) -> bool:
+    def delete_resume(self, user_id: int, resume_id: int) -> bool:
         with get_connection() as connection:
             row = connection.execute(
-                "SELECT file_path FROM resumes WHERE id = ?",
-                (resume_id,),
+                "SELECT file_path FROM resumes WHERE id = ? AND user_id = ?",
+                (resume_id, user_id),
             ).fetchone()
             if row is None:
                 return False
 
-            connection.execute("DELETE FROM analyses WHERE resume_id = ?", (resume_id,))
-            connection.execute("DELETE FROM job_descriptions WHERE resume_id = ?", (resume_id,))
-            connection.execute("DELETE FROM resumes WHERE id = ?", (resume_id,))
+            connection.execute("DELETE FROM analyses WHERE resume_id = ? AND user_id = ?", (resume_id, user_id))
+            connection.execute("DELETE FROM job_descriptions WHERE resume_id = ? AND user_id = ?", (resume_id, user_id))
+            connection.execute("DELETE FROM resumes WHERE id = ? AND user_id = ?", (resume_id, user_id))
 
         file_path = Path(str(row["file_path"]))
         if file_path.exists():

@@ -6,6 +6,7 @@ from app.database.database import get_connection, utc_now
 class AnalysisRepository:
     def save_job_description(
         self,
+        user_id: int,
         resume_id: int,
         job_title: str,
         company: str,
@@ -14,22 +15,22 @@ class AnalysisRepository:
         with get_connection() as connection:
             cursor = connection.execute(
                 """
-                INSERT INTO job_descriptions (resume_id, job_title, company, description_text, created_at)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO job_descriptions (user_id, resume_id, job_title, company, description_text, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                (resume_id, job_title, company, description_text, utc_now()),
+                (user_id, resume_id, job_title, company, description_text, utc_now()),
             )
             return int(cursor.lastrowid)
 
-    def get_job_description(self, jd_id: int) -> dict[str, object] | None:
+    def get_job_description(self, user_id: int, jd_id: int) -> dict[str, object] | None:
         with get_connection() as connection:
             row = connection.execute(
                 """
                 SELECT id, resume_id, job_title, company, description_text, created_at
                 FROM job_descriptions
-                WHERE id = ?
+                WHERE id = ? AND user_id = ?
                 """,
-                (jd_id,),
+                (jd_id, user_id),
             ).fetchone()
 
         if row is None:
@@ -44,25 +45,25 @@ class AnalysisRepository:
             "created_at": row["created_at"],
         }
 
-    def save_analysis(self, analysis_id: str, resume_id: int, jd_id: int, result: dict[str, object]) -> None:
+    def save_analysis(self, user_id: int, analysis_id: str, resume_id: int, jd_id: int, result: dict[str, object]) -> None:
         with get_connection() as connection:
             connection.execute(
                 """
-                INSERT INTO analyses (id, resume_id, jd_id, result_json, created_at)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO analyses (id, user_id, resume_id, jd_id, result_json, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                (analysis_id, resume_id, jd_id, json.dumps(result), utc_now()),
+                (analysis_id, user_id, resume_id, jd_id, json.dumps(result), utc_now()),
             )
 
-    def get_analysis(self, analysis_id: str) -> dict[str, object] | None:
+    def get_analysis(self, user_id: int, analysis_id: str) -> dict[str, object] | None:
         with get_connection() as connection:
             row = connection.execute(
                 """
                 SELECT id, resume_id, jd_id, result_json, created_at
                 FROM analyses
-                WHERE id = ?
+                WHERE id = ? AND user_id = ?
                 """,
-                (analysis_id,),
+                (analysis_id, user_id),
             ).fetchone()
 
         if row is None:
@@ -72,7 +73,7 @@ class AnalysisRepository:
         result["analysis_id"] = row["id"]
         return result
 
-    def list_analyses(self) -> list[dict[str, object]]:
+    def list_analyses(self, user_id: int) -> list[dict[str, object]]:
         with get_connection() as connection:
             rows = connection.execute(
                 """
@@ -81,8 +82,10 @@ class AnalysisRepository:
                 FROM analyses a
                 JOIN resumes r ON r.id = a.resume_id
                 JOIN job_descriptions j ON j.id = a.jd_id
+                WHERE a.user_id = ?
                 ORDER BY a.created_at DESC
-                """
+                """,
+                (user_id,),
             ).fetchall()
 
         items: list[dict[str, object]] = []
